@@ -1,0 +1,2134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuando el Clima Habla: Análisis de Datos Agroclimáticos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --earth-dark: #2C3E2D;
+            --earth-medium: #4A5D4E;
+            --earth-light: #8FA395;
+            --sage: #B8C4B8;
+            --cream: #F5F1E8;
+            --sun: #E6A23C;
+            --water: #5B8BA0;
+            --warning: #D4A373;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--earth-dark);
+            overflow: hidden;
+        }
+        
+        h1, h2, h3 {
+            font-family: 'Playfair Display', serif;
+        }
+        
+        .slide {
+            position: absolute;
+            width: 100%;
+            height: 100vh;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            overflow-y: auto;
+        }
+        
+        .slide.active {
+            opacity: 1;
+            transform: translateX(0);
+            pointer-events: all;
+        }
+        
+        .slide.prev {
+            transform: translateX(-100%);
+        }
+        
+        .grain-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+        
+        .floating-element {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(230, 162, 60, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(230, 162, 60, 0); }
+        }
+        
+        .data-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .data-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--sun);
+        }
+        
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: var(--sun);
+            transition: width 0.3s ease;
+            z-index: 100;
+        }
+        
+        /* Menú vertical - CORREGIDO */
+        .side-menu {
+            position: fixed;
+            right: 0;
+            top: 0;
+            height: 100vh;
+            width: 320px;
+            background: rgba(26, 47, 26, 0.98);
+            backdrop-filter: blur(10px);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            padding: 1.5rem 0;
+        }
+        
+        .side-menu.open {
+            transform: translateX(0);
+        }
+        
+        .side-menu-toggle {
+            position: fixed;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1001;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(230, 162, 60, 0.2);
+            border: 1px solid rgba(230, 162, 60, 0.5);
+            color: var(--sun);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .side-menu-toggle:hover {
+            background: rgba(230, 162, 60, 0.4);
+            transform: translateY(-50%) scale(1.1);
+        }
+        
+        .side-menu-toggle.active {
+            right: 336px;
+            background: rgba(230, 162, 60, 0.8);
+            color: var(--earth-dark);
+        }
+        
+        .menu-item {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-left-color: rgba(230, 162, 60, 0.5);
+        }
+        
+        .menu-item.active {
+            background: rgba(230, 162, 60, 0.15);
+            border-left-color: var(--sun);
+        }
+        
+        .menu-number {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--sun);
+            min-width: 24px;
+            padding-top: 0.125rem;
+        }
+        
+        .menu-title {
+            font-size: 0.875rem;
+            color: rgba(245, 241, 232, 0.8);
+            line-height: 1.4;
+            font-weight: 400;
+        }
+        
+        .menu-item.active .menu-title {
+            color: var(--cream);
+            font-weight: 600;
+        }
+        
+        .menu-header {
+            padding: 0 1.5rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 1rem;
+            position: sticky;
+            top: 0;
+            background: rgba(26, 47, 26, 0.98);
+            z-index: 10;
+        }
+        
+        .menu-header h3 {
+            color: var(--sun);
+            font-size: 1.125rem;
+            font-weight: 700;
+        }
+        
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .menu-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .reveal-text {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease;
+        }
+        
+        .active .reveal-text {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .stagger-1 { transition-delay: 0.1s; }
+        .stagger-2 { transition-delay: 0.2s; }
+        .stagger-3 { transition-delay: 0.3s; }
+        .stagger-4 { transition-delay: 0.4s; }
+        .stagger-5 { transition-delay: 0.5s; }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        .moon-phase {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(90deg, var(--cream) 50%, transparent 50%);
+            position: relative;
+            box-shadow: 0 0 20px rgba(245, 241, 232, 0.3);
+        }
+        
+        .leaf-pattern {
+            background-image: radial-gradient(circle at 2px 2px, rgba(143, 163, 149, 0.15) 2px, transparent 0);
+            background-size: 40px 40px;
+        }
+        
+        .table-row:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .icon-box {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(230, 162, 60, 0.2), rgba(91, 139, 160, 0.2));
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+<base target="_blank">
+</head>
+<body class="text-cream antialiased">
+
+    <div class="grain-overlay"></div>
+    <div class="progress-bar" id="progressBar"></div>
+    
+    <!-- Botón toggle para el menú -->
+    <button class="side-menu-toggle" id="menuToggle" onclick="toggleMenu()">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="menuIcon">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+    </button>
+    
+    <!-- Overlay para cerrar el menú al hacer click fuera -->
+    <div class="menu-overlay" id="menuOverlay" onclick="toggleMenu()"></div>
+    
+    <!-- Menú vertical de navegación -->
+    <nav class="side-menu" id="sideMenu">
+        <div class="menu-header">
+            <h3>📋 Contenido</h3>
+            <p class="text-xs text-gray-400 mt-1">Haz clic para navegar</p>
+        </div>
+        <div id="menuItems">
+            <!-- Los items se generan dinámicamente con JavaScript -->
+        </div>
+    </nav>
+
+    <!-- SLIDES (1-23) -->
+    
+    <!-- Slide 1: Portada -->
+    <section class="slide active leaf-pattern" style="background: linear-gradient(135deg, #1a2f1a 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex flex-col justify-center items-center px-8 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-full overflow-hidden opacity-20">
+                <div class="absolute top-10 left-10 w-64 h-64 bg-yellow-500 rounded-full blur-3xl floating-element"></div>
+                <div class="absolute bottom-20 right-20 w-96 h-96 bg-blue-500 rounded-full blur-3xl floating-element" style="animation-delay: 2s;"></div>
+            </div>
+            
+            <div class="z-10 text-center max-w-4xl">
+                <div class="mb-6 inline-block px-4 py-1 rounded-full border border-yellow-500/30 text-yellow-400 text-sm tracking-widest uppercase reveal-text">
+                    Agricultura Sostenible
+                </div>
+                <h1 class="text-5xl md:text-5xl text-gray-300 mb-6 leading-tight reveal-text stagger-1">
+                     Cuando el Clima Habla:<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-300">Análisis de Datos Agroclimáticos para el Aula y la Finca</span>
+                </h1>
+                <p class="text-xl md:text-2xl text-gray-300 mb-8 reveal-text stagger-2 font-light italic">
+                    Matemáticas y Física aplicadas a la agricultura sostenible
+                </p>
+                <div class="w-24 h-1 bg-gradient-to-r from-yellow-400 to-transparent mx-auto mb-8 reveal-text stagger-3"></div>
+                <p class="text-lg text-gray-400 reveal-text stagger-4">
+                     III Congreso de Educación Ambiental, Cambio Climático y Desarrollo Sostenible - CIE UPR
+                </p>
+                
+                <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm reveal-text stagger-5">
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 mb-2">Presentador</div>
+                        <div class="text-gray-300">David Quispitupa Yupa</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 mb-2">Institución</div>
+                        <div class="text-gray-300">RAPA Project</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 mb-2">Evento</div>
+                        <div class="text-gray-300">Congreso | Febrero, 2026</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 2: Propósito -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full grid md:grid-cols-2 gap-12 items-center">
+                <div>
+                    <h2 class="text-4xl md:text-5xl font-bold mb-8 reveal-text text-yellow-400">Propósito del taller</h2>
+                    <p class="text-xl text-gray-300 mb-8 reveal-text stagger-1 leading-relaxed">
+                        ¿De qué trata este taller?
+                    </p>
+                    
+                    <div class="space-y-4 reveal-text stagger-2">
+                        <div class="flex items-start gap-4 data-card p-4 rounded-lg">
+                            <div class="icon-box flex-shrink-0">
+                                <svg class="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="text-green-400 text-lg mb-1">Taller práctico</h3>
+                                <p class="text-gray-400 text-sm">Análisis e interpretación de datos agroclimáticos aplicados a contextos educativos y productores.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="space-y-6">
+                    <div class="reveal-text stagger-3">
+                        <h3 class="text-xl font-bold mb-4 text-blue-300 flex items-center">
+                            <span class="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                            Datos de clima
+                        </h3>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="data-card p-3 rounded text-center">
+                                <div class="text-2xl mb-1">🌡️</div>
+                                <div class="text-sm text-green-400">Temperatura</div>
+                            </div>
+                            <div class="data-card p-3 rounded text-center">
+                                <div class="text-2xl mb-1">🌧️</div>
+                                <div class="text-sm text-green-400">Precipitación</div>
+                            </div>
+                            <div class="data-card p-3 rounded text-center">
+                                <div class="text-2xl mb-1">💨</div>
+                                <div class="text-sm text-green-400">Humedad</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-4">
+                        <h3 class="text-xl font-bold mb-4 text-green-300 flex items-center">
+                            <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                            Datos de suelo
+                        </h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="data-card p-3 rounded text-center">
+                                <div class="text-2xl mb-1">🌱</div>
+                                <div class="text-sm text-green-400">Humedad</div>
+                            </div>
+                            <div class="data-card p-3 rounded text-center">
+                                <div class="text-2xl mb-1">💧</div>
+                                <div class="text-sm text-green-400">Retención</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-5 mt-8 p-6 border-l-4 border-yellow-400 bg-white/5 rounded-r-lg">
+                        <h3 class="font-bold text-lg mb-2 text-yellow-400">Conexión disciplinar</h3>
+                        <p class="text-gray-300">Vinculación entre <strong>Matemáticas y Física</strong> con decisiones concretas en huertos escolares y fincas comunitarias.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 3: Objetivos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #1e2b1f 100%);">
+        <div class="min-h-screen flex flex-col justify-center px-8 py-16">
+            <div class="max-w-6xl mx-auto w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-4 reveal-text text-center">Metas de aprendizaje</h2>
+                <p class="text-xl text-gray-400 mb-12 text-center reveal-text stagger-1">Al finalizar el taller, los participantes podrán:</p>
+                
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-1 group cursor-pointer hover:scale-105 transition-transform">
+                        <div class="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center mb-4 text-yellow-400 text-xl font-bold border border-yellow-500/50">01</div>
+                        <h3 class="font-bold text-lg mb-2 text-yellow-400">Reconocer variables</h3>
+                        <p class="text-gray-400 text-sm mb-3">Identificar principales variables agroclimáticas y sus unidades.</p>
+                        <div class="flex gap-2 text-xs text-yellow-500">
+                            <span class="px-2 py-1 bg-white/5 rounded">°C</span>
+                            <span class="px-2 py-1 bg-white/5 rounded">mm</span>
+                            <span class="px-2 py-1 bg-white/5 rounded">%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-2 group cursor-pointer hover:scale-105 transition-transform">
+                        <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-4 text-blue-400 text-xl font-bold border border-blue-500/50">02</div>
+                        <h3 class="font-bold text-lg mb-2 text-blue-400">Aplicar estadística</h3>
+                        <p class="text-gray-400 text-sm mb-3">Utilizar técnicas estadísticas básicas para describir datos.</p>
+                        <div class="flex gap-2 text-xs text-blue-500">
+                            <span class="px-2 py-1 bg-white/5 rounded">Promedios</span>
+                            <span class="px-2 py-1 bg-white/5 rounded">Rangos</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-3 group cursor-pointer hover:scale-105 transition-transform">
+                        <div class="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center mb-4 text-orange-400 text-xl font-bold border border-orange-500/50">03</div>
+                        <h3 class="font-bold text-lg mb-2 text-orange-400">Identificar patrones</h3>
+                        <p class="text-gray-400 text-sm mb-3">Detectar tendencias relevantes para decisiones agrícolas.</p>
+                        <div class="flex gap-2 text-xs text-orange-500">
+                            <span class="px-2 py-1 bg-white/5 rounded">Sequías</span>
+                            <span class="px-2 py-1 bg-white/5 rounded">Olas de calor</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-4 group cursor-pointer hover:scale-105 transition-transform">
+                        <div class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mb-4 text-green-400 text-xl font-bold border border-green-500/50">04</div>
+                        <h3 class="font-bold text-lg mb-2 text-green-400">Relacionar con decisiones</h3>
+                        <p class="text-gray-400 text-sm">Conectar información agroclimática con decisiones prácticas sobre cultivos, siembra y manejo del agua.</p>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-5 group cursor-pointer hover:scale-105 transition-transform md:col-span-2 lg:col-span-2">
+                        <div class="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-4 text-purple-400 text-xl font-bold border border-purple-500/50">05</div>
+                        <h3 class="font-bold text-lg mb-2 text-purple-400">Diseñar proyectos educativos</h3>
+                        <p class="text-gray-400 text-sm">Crear actividades de aula o proyectos escolares que integren datos agroclimáticos en la educación ambiental y la sostenibilidad.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 4: Estructura -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1e2b1f 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-5xl w-full">
+                <h2 class="text-4xl md:text-5xl font-bold mb-12 reveal-text text-center text-yellow-400">Estructura de la sesión</h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">Ruta de trabajo del taller con actividades prácticas</p>
+                
+                <div class="relative">
+                    <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-yellow-400 via-blue-400 to-green-400"></div>
+                    
+                    <div class="space-y-8">
+                        <div class="flex items-start gap-6 reveal-text stagger-1">
+                            <div class="w-16 h-16 rounded-full bg-yellow-500/20 border-2 border-yellow-400 flex items-center justify-center text-yellow-400 font-bold text-xl z-10 flex-shrink-0">1</div>
+                            <div class="data-card p-6 rounded-lg flex-1">
+                                <h3 class="font-bold text-xl mb-2 text-yellow-400">Introducción</h3>
+                                <ul class="text-gray-300 space-y-1 text-sm">
+                                    <li>• ¿Qué es un dato agroclimático?</li>
+                                    <li>• Clima, suelo y seguridad alimentaria</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-6 reveal-text stagger-2">
+                            <div class="w-16 h-16 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center text-blue-400 font-bold text-xl z-10 flex-shrink-0">2</div>
+                            <div class="data-card p-6 rounded-lg flex-1">
+                                <h3 class="font-bold text-xl mb-2 text-blue-400">Conociendo los datos</h3>
+                                <ul class="text-gray-300 space-y-1 text-sm">
+                                    <li>• Variables y fuentes de información</li>
+                                    <li>• Unidades y escalas de medida</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-6 reveal-text stagger-3">
+                            <div class="w-16 h-16 rounded-full bg-orange-500/20 border-2 border-orange-400 flex items-center justify-center text-orange-400 font-bold text-xl z-10 flex-shrink-0">3</div>
+                            <div class="data-card p-6 rounded-lg flex-1">
+                                <h3 class="font-bold text-xl mb-2 text-orange-400">Matemáticas con datos agroclimáticos</h3>
+                                <ul class="text-gray-300 space-y-1 text-sm">
+                                    <li>• Promedios, rangos, conteos, gráficos</li>
+                                    <li>• Patrones y tendencias</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-6 reveal-text stagger-4">
+                            <div class="w-16 h-16 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center text-green-400 font-bold text-xl z-10 flex-shrink-0">4</div>
+                            <div class="data-card p-6 rounded-lg flex-1">
+                                <h3 class="font-bold text-xl mb-2 text-green-400">De la gráfica a la decisión</h3>
+                                <ul class="text-gray-300 space-y-1 text-sm">
+                                    <li>• ¿Cuándo sembrar? ¿Cuánto regar?</li>
+                                    <li>• Riesgos climáticos y calendario agrícola</li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-6 reveal-text stagger-5">
+                            <div class="w-16 h-16 rounded-full bg-purple-500/20 border-2 border-purple-400 flex items-center justify-center text-purple-400 font-bold text-xl z-10 flex-shrink-0">5</div>
+                            <div class="data-card p-6 rounded-lg flex-1">
+                                <h3 class="font-bold text-xl mb-2 text-purple-400">Cierre</h3>
+                                <ul class="text-gray-300 space-y-1 text-sm">
+                                    <li>• Proyectos para el aula</li>
+                                    <li>• Huertos escolares</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 5: Concepto -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full grid md:grid-cols-2 gap-12 items-center">
+                <div class="reveal-text">
+                    <div class="inline-block px-4 py-1 rounded-full border border-yellow-500/30 text-yellow-400 text-sm tracking-widest uppercase mb-6">Concepto fundamental</div>
+                    <h2 class="text-4xl md:text-5xl text-yellow-400 mb-8">¿Qué es un dato<br><span class="text-yellow-400">agroclimático?</span></h2>
+                    
+                    <div class="space-y-4">
+                        <div class="data-card p-4 rounded-lg border-l-4 border-yellow-400">
+                            <p class="text-gray-300">Es una <strong class="text-white">medición o registro</strong> sobre condiciones del clima y del suelo que afectan la producción agrícola.</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="data-card p-4 rounded-lg text-center">
+                                <div class="text-3xl mb-2">🌤️</div>
+                                <h4 class="font-bold text-yellow-400 mb-1">Datos de clima</h4>
+                                <p class="text-xs text-gray-400">Temperatura, lluvia, humedad, viento</p>
+                            </div>
+                            <div class="data-card p-4 rounded-lg text-center">
+                                <div class="text-3xl mb-2">🌍</div>
+                                <h4 class="font-bold text-green-400 mb-1">Datos de suelo</h4>
+                                <p class="text-xs text-gray-400">Humedad, retención, salinidad</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="space-y-6 reveal-text stagger-2">
+                    <div class="data-card p-6 rounded-xl">
+                        <h3 class="font-bold text-lg mb-4 text-blue-400">Expresión numérica</h3>
+                        <p class="text-gray-300 mb-4">Se expresa en números con unidades específicas:</p>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="text-center p-3 bg-white/5 rounded-lg">
+                                <div class="text-2xl font-bold text-yellow-400">°C</div>
+                                <div class="text-xs text-gray-400">Temperatura</div>
+                            </div>
+                            <div class="text-center p-3 bg-white/5 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-400">mm</div>
+                                <div class="text-xs text-gray-400">Precipitación</div>
+                            </div>
+                            <div class="text-center p-3 bg-white/5 rounded-lg">
+                                <div class="text-2xl font-bold text-green-400">%</div>
+                                <div class="text-xs text-gray-400">Humedad</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl border border-yellow-400/30">
+                        <h3 class="font-bold text-lg mb-4 text-yellow-400">¿Para qué sirve?</h3>
+                        <p class="text-gray-300 mb-3">Nos permite responder preguntas fundamentales:</p>
+                        <ul class="space-y-2 text-sm text-gray-400">
+                            <li class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                ¿Cuándo hay mayor riesgo de sequía o exceso de lluvia?
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                ¿En qué periodo es más conveniente sembrar o regar?
+                            </li>
+                        </ul>
+                        <div class="mt-4 pt-4 border-t border-white/10">
+                            <p class="text-center text-yellow-400 font-semibold">Datos = decisiones informadas</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 6: Importancia -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1a2f1a 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex flex-col justify-center px-8 py-16">
+            <div class="max-w-6xl mx-auto w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-4 reveal-text text-center">Clima + suelo = <span class="text-yellow-400">base de la producción</span></h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">¿Por qué son tan importantes?</p>
+                
+                <div class="grid md:grid-cols-2 gap-8 mb-12">
+                    <div class="data-card p-8 rounded-2xl reveal-text stagger-2 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+                        <div class="relative z-10">
+                            <div class="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center mb-6 text-3xl">☀️</div>
+                            <h3 class="text-2xl font-bold mb-4 text-yellow-400">El clima influye en:</h3>
+                            <ul class="space-y-3 text-gray-300">
+                                <li class="flex items-start gap-3">
+                                    <span class="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></span>
+                                    <span>Germinación, crecimiento y rendimiento de cultivos</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></span>
+                                    <span>Aparición de plagas y enfermedades</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 flex gap-2">
+                                <span class="px-3 py-1 bg-yellow-500/10 rounded-full text-xs text-yellow-400 border border-yellow-500/20">Temperatura</span>
+                                <span class="px-3 py-1 bg-yellow-500/10 rounded-full text-xs text-yellow-400 border border-yellow-500/20">Lluvia</span>
+                                <span class="px-3 py-1 bg-yellow-500/10 rounded-full text-xs text-yellow-400 border border-yellow-500/20">Humedad</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-8 rounded-2xl reveal-text stagger-3 relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+                        <div class="relative z-10">
+                            <div class="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-6 text-3xl">🌱</div>
+                            <h3 class="text-2xl font-bold mb-4 text-green-400">El suelo determina:</h3>
+                            <ul class="space-y-3 text-gray-300">
+                                <li class="flex items-start gap-3">
+                                    <span class="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></span>
+                                    <span>Cuánta agua disponible tienen las raíces</span>
+                                </li>
+                                <li class="flex items-start gap-3">
+                                    <span class="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></span>
+                                    <span>Cómo responden los cultivos a eventos extremos</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 flex gap-2">
+                                <span class="px-3 py-1 bg-green-500/10 rounded-full text-xs text-green-400 border border-green-500/20">Textura</span>
+                                <span class="px-3 py-1 bg-green-500/10 rounded-full text-xs text-green-400 border border-green-500/20">Estructura</span>
+                                <span class="px-3 py-1 bg-green-500/10 rounded-full text-xs text-green-400 border border-green-500/20">Materia orgánica</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-4 data-card p-6 rounded-xl border-l-4 border-red-400 bg-red-500/5">
+                    <h3 class="text-xl font-bold mb-3 text-red-400 flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        En contexto de cambio climático
+                    </h3>
+                    <div class="grid md:grid-cols-2 gap-4 text-sm">
+                        <div class="flex items-center gap-3 text-gray-300">
+                            <span class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-red-400">!</span>
+                            <span>Más eventos extremos: sequías, lluvias intensas, olas de calor</span>
+                        </div>
+                        <div class="flex items-center gap-3 text-gray-300">
+                            <span class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">📊</span>
+                            <span>Mayor necesidad de decidir con evidencia, no solo por costumbre</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 7: Variables -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #1e2b1f 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">Variables agroclimáticas <span class="text-yellow-400">clave</span></h2>
+                
+                <div class="grid md:grid-cols-3 gap-6 mb-8">
+                    <div class="data-card p-8 rounded-2xl reveal-text stagger-1 text-center group hover:scale-105 transition-all duration-300">
+                        <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-4xl shadow-lg shadow-orange-500/20 group-hover:shadow-orange-500/40 transition-shadow">🌡️</div>
+                        <h3 class="text-2xl font-bold mb-2 text-orange-400">Temperatura del aire</h3>
+                        <div class="text-3xl font-bold text-white mb-4">°C</div>
+                        <p class="text-gray-400 text-sm">Afecta directamente la germinación, crecimiento y floración de los cultivos.</p>
+                        <div class="mt-4 pt-4 border-t border-white/10 text-xs text-orange-500">
+                            <span class="block">Rango óptimo por cultivo</span>
+                            <span class="block">Umbral de daño</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-8 rounded-2xl reveal-text stagger-2 text-center group hover:scale-105 transition-all duration-300">
+                        <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-4xl shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-shadow">🌧️</div>
+                        <h3 class="text-2xl font-bold mb-2 text-blue-400">Precipitación</h3>
+                        <div class="text-3xl font-bold text-white mb-4">mm</div>
+                        <p class="text-gray-400 text-sm">Indica cuánta agua recibió el suelo, fundamental para planificar riego.</p>
+                        <div class="mt-4 pt-4 border-t border-white/10 text-xs text-blue-500">
+                            <span class="block">Acumulado mensual</span>
+                            <span class="block">Distribución temporal</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-8 rounded-2xl reveal-text stagger-3 text-center group hover:scale-105 transition-all duration-300">
+                        <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-4xl shadow-lg shadow-green-500/20 group-hover:shadow-green-500/40 transition-shadow">💧</div>
+                        <h3 class="text-2xl font-bold mb-2 text-green-400">Humedad del suelo</h3>
+                        <div class="text-3xl font-bold text-white mb-4">%</div>
+                        <p class="text-gray-400 text-sm">Relacionada con la disponibilidad de agua para las plantas.</p>
+                        <div class="mt-4 pt-4 border-t border-white/10 text-xs text-green-500">
+                            <span class="block">Punto de marchitez</span>
+                            <span class="block">Capacidad de campo</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-4 data-card p-6 rounded-xl bg-white/5">
+                    <h3 class="text-lg font-bold mb-4 text-gray-300 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Otras variables (opcionales según nivel y recursos)
+                    </h3>
+                    <div class="flex flex-wrap gap-3">
+                        <span class="px-4 py-2 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-sm">☀️ Radiación solar</span>
+                        <span class="px-4 py-2 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20 text-sm">💨 Velocidad del viento</span>
+                        <span class="px-4 py-2 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-sm">🌊 Evapotranspiración</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 8: Fuentes -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">¿De dónde salen <span class="text-yellow-400">estos datos?</span></h2>
+                
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-1 flex gap-4 items-start">
+                        <div class="w-14 h-14 rounded-lg bg-blue-500/20 flex items-center justify-center text-2xl flex-shrink-0">🏫</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-blue-400 mb-2">Estaciones meteorológicas</h3>
+                            <p class="text-gray-400 text-sm mb-2">Equipos automáticos que registran variables en tiempo real.</p>
+                            <div class="flex flex-wrap gap-2 text-xs">
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Escuelas</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Universidades</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Fincas</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Municipios</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-2 flex gap-4 items-start">
+                        <div class="w-14 h-14 rounded-lg bg-green-500/20 flex items-center justify-center text-2xl flex-shrink-0">🔌</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-green-400 mb-2">Sensores de suelo</h3>
+                            <p class="text-gray-400 text-sm mb-2">Dispositivos que miden condiciones a diferentes profundidades.</p>
+                            <div class="flex flex-wrap gap-2 text-xs">
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Sondas de humedad</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Tensiómetros</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Sensores inalámbricos</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-3 flex gap-4 items-start">
+                        <div class="w-14 h-14 rounded-lg bg-purple-500/20 flex items-center justify-center text-2xl flex-shrink-0">🌐</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-purple-400 mb-2">Bases de datos públicas</h3>
+                            <p class="text-gray-400 text-sm mb-2">Repositorios oficiales con series históricas.</p>
+                            <div class="flex flex-wrap gap-2 text-xs">
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Servicios meteorológicos</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Redes de estaciones</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Institutos de investigación</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-4 flex gap-4 items-start">
+                        <div class="w-14 h-14 rounded-lg bg-yellow-500/20 flex items-center justify-center text-2xl flex-shrink-0">📝</div>
+                        <div>
+                            <h3 class="font-bold text-lg text-yellow-400 mb-2">Registros propios</h3>
+                            <p class="text-gray-400 text-sm mb-2">Bitácoras y registros manuales de observaciones locales.</p>
+                            <div class="flex flex-wrap gap-2 text-xs">
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Huertos escolares</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Proyectos comunitarios</span>
+                                <span class="px-2 py-1 bg-white/5 rounded text-gray-300">Diarios de campo</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 text-center reveal-text stagger-5">
+                    <p class="text-lg text-gray-300 italic">"Combinar múltiples fuentes mejora la calidad del análisis"</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 9: Unidades -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1e2b1f 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-5xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-4 reveal-text text-center">Unidades: <span class="text-yellow-400">el idioma de los datos</span></h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">Sistema de unidades principales</p>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+                    <div class="data-card p-6 rounded-xl text-center reveal-text stagger-1 group hover:bg-white/10 transition-colors">
+                        <div class="text-4xl font-bold text-orange-400 mb-2 group-hover:scale-110 transition-transform">°C</div>
+                        <div class="text-sm text-gray-400">Temperatura</div>
+                        <div class="text-xs text-orange-600 mt-1">Grados Celsius</div>
+                    </div>
+                    <div class="data-card p-6 rounded-xl text-center reveal-text stagger-2 group hover:bg-white/10 transition-colors">
+                        <div class="text-4xl font-bold text-blue-400 mb-2 group-hover:scale-110 transition-transform">mm</div>
+                        <div class="text-sm text-gray-400">Precipitación</div>
+                        <div class="text-xs text-blue-600 mt-1">Milímetros</div>
+                    </div>
+                    <div class="data-card p-6 rounded-xl text-center reveal-text stagger-3 group hover:bg-white/10 transition-colors">
+                        <div class="text-4xl font-bold text-green-400 mb-2 group-hover:scale-110 transition-transform">%</div>
+                        <div class="text-sm text-gray-400">Humedad</div>
+                        <div class="text-xs text-green-600 mt-1">Porcentaje</div>
+                    </div>
+                    <div class="data-card p-6 rounded-xl text-center reveal-text stagger-4 group hover:bg-white/10 transition-colors">
+                        <div class="text-4xl font-bold text-purple-400 mb-2 group-hover:scale-110 transition-transform">📅</div>
+                        <div class="text-sm text-gray-400">Tiempo</div>
+                        <div class="text-xs text-red-600 mt-1">Fecha/Hora</div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-5 data-card p-8 rounded-2xl border-2 border-yellow-400/50 bg-yellow-500/5">
+                    <div class="flex items-center justify-center mb-6">
+                        <div class="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center pulse-ring">
+                            <svg class="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        </div>
+                    </div>
+                    <h3 class="text-2xl font-bold text-center text-yellow-400 mb-6">Mensaje clave</h3>
+                    <p class="text-center text-xl text-gray-300 mb-8">"Sin unidades, el número no dice nada"</p>
+                    
+                    <div class="grid md:grid-cols-3 gap-4 text-center">
+                        <div class="p-4 rounded-lg bg-white/5">
+                            <div class="text-2xl mb-2">1</div>
+                            <div class="font-semibold text-gray-300">¿Qué se midió?</div>
+                            <div class="text-sm text-orange-500">Variable específica</div>
+                        </div>
+                        <div class="p-4 rounded-lg bg-white/5">
+                            <div class="text-2xl mb-2">2</div>
+                            <div class="font-semibold text-gray-300">¿En qué unidades?</div>
+                            <div class="text-sm text-orange-500">Escala utilizada</div>
+                        </div>
+                        <div class="p-4 rounded-lg bg-white/5">
+                            <div class="text-2xl mb-2">3</div>
+                            <div class="font-semibold text-gray-300">¿En qué momento?</div>
+                            <div class="text-sm text-orange-500">Fecha y hora</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 10: Tabla de datos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #1e2b1f 100%);">
+        <div class="min-h-screen flex flex-col justify-center px-8 py-16">
+            <div class="max-w-5xl mx-auto w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-8 reveal-text text-center">Ejemplo de tabla de datos</h2>
+                <p class="text-center text-gray-400 mb-8 reveal-text stagger-1">Registro diario de variables agroclimáticas</p>
+                
+                <div class="reveal-text stagger-2 overflow-hidden rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm mb-8">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-white/10 border-b border-white/10">
+                                <th class="p-4 text-yellow-400 font-bold">Fecha</th>
+                                <th class="p-4 text-orange-400 font-bold">T (°C)</th>
+                                <th class="p-4 text-blue-400 font-bold">Lluvia (mm)</th>
+                                <th class="p-4 text-green-400 font-bold">Humedad suelo (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-gray-300">
+                            <tr class="table-row border-b border-white/5 transition-colors">
+                                <td class="p-4 font-mono">01/06/25</td>
+                                <td class="p-4">28</td>
+                                <td class="p-4"><span class="text-gray-500">0</span></td>
+                                <td class="p-4">32</td>
+                            </tr>
+                            <tr class="table-row border-b border-white/5 transition-colors bg-blue-500/5">
+                                <td class="p-4 font-mono">02/06/25</td>
+                                <td class="p-4">29</td>
+                                <td class="p-4 text-blue-400 font-bold">5</td>
+                                <td class="p-4 text-blue-400 font-bold">38</td>
+                            </tr>
+                            <tr class="table-row border-b border-white/5 transition-colors bg-blue-500/10">
+                                <td class="p-4 font-mono">03/06/25</td>
+                                <td class="p-4">27</td>
+                                <td class="p-4 text-blue-400 font-bold text-lg">20 ↑</td>
+                                <td class="p-4 text-green-400 font-bold text-lg">55 ↑</td>
+                            </tr>
+                            <tr class="table-row transition-colors">
+                                <td class="p-4 font-mono">04/06/25</td>
+                                <td class="p-4 text-orange-400 font-bold">30</td>
+                                <td class="p-4"><span class="text-gray-500">0</span></td>
+                                <td class="p-4">47</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="grid md:grid-cols-3 gap-4 reveal-text stagger-3">
+                    <div class="data-card p-4 rounded-lg text-center">
+                        <div class="text-2xl font-bold text-blue-400 mb-1">2/4</div>
+                        <div class="text-sm text-gray-400">Días con lluvia (50%)</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg text-center">
+                        <div class="text-2xl font-bold text-orange-400 mb-1">27-30°C</div>
+                        <div class="text-sm text-gray-400">Rango temperatura</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg text-center">
+                        <div class="text-2xl font-bold text-green-400 mb-1">+23%</div>
+                        <div class="text-sm text-gray-400">Aumento humedad (día 3)</div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 reveal-text stagger-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-center">
+                    <p class="text-yellow-400 font-semibold">¡Con pocos datos ya podemos analizar!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 11: Estadística básica -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1a2f1a 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">Operaciones básicas con <span class="text-yellow-400">los datos</span></h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">Primer paso: describir el comportamiento general</p>
+                
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="reveal-text stagger-2">
+                        <div class="data-card p-8 rounded-2xl h-full border-t-4 border-blue-400">
+                            <div class="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-6 text-3xl">📊</div>
+                            <h3 class="text-2xl font-bold mb-4 text-blue-400">Promedios</h3>
+                            <p class="text-gray-400 mb-4 text-sm">Valores representativos que resumen el comportamiento central.</p>
+                            <ul class="space-y-2 text-sm text-gray-300">
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                                    Temperatura media semanal/mensual
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                                    Lluvia media mensual
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-blue-500/10 rounded text-xs text-blue-300 font-mono">
+                                Fórmula: Σvalores/n
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-3">
+                        <div class="data-card p-8 rounded-2xl h-full border-t-4 border-orange-400">
+                            <div class="w-16 h-16 rounded-full bg-orange-500/20 flex items-center justify-center mb-6 text-3xl">↔️</div>
+                            <h3 class="text-2xl font-bold mb-4 text-orange-400">Rangos</h3>
+                            <p class="text-gray-400 mb-4 text-sm">Diferencia entre valores extremos que muestra variabilidad.</p>
+                            <ul class="space-y-2 text-sm text-gray-300">
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-orange-400 rounded-full"></span>
+                                    Temp. máxima y mínima
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-orange-400 rounded-full"></span>
+                                    Días con/sin lluvia
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-orange-500/10 rounded text-xs text-orange-300 font-mono">
+                                Rango = Máx - Mín
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-4">
+                        <div class="data-card p-8 rounded-2xl h-full border-t-4 border-green-400">
+                            <div class="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-6 text-3xl">🔢</div>
+                            <h3 class="text-2xl font-bold mb-4 text-green-400">Conteos</h3>
+                            <p class="text-gray-400 mb-4 text-sm">Frecuencia de eventos específicos con ciertos criterios.</p>
+                            <ul class="space-y-2 text-sm text-gray-300">
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                                    Días con lluvia >10mm
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                                    Días totalmente secos (0 mm)
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-green-500/10 rounded text-xs text-green-300 font-mono">
+                                Contar con condiciones
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 text-center reveal-text stagger-5">
+                    <div class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10">
+                        <span class="text-gray-400">Conexión con:</span>
+                        <span class="text-blue-400 font-semibold">Estadística descriptiva</span>
+                        <span class="text-gray-600">•</span>
+                        <span class="text-orange-400 font-semibold">Operaciones básicas</span>
+                        <span class="text-gray-600">•</span>
+                        <span class="text-green-400 font-semibold">Interpretación de datos</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 12: Gráficos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-8 reveal-text text-center">Ver el clima en un <span class="text-yellow-400">gráfico</span></h2>
+                
+                <div class="grid md:grid-cols-2 gap-8 mb-8">
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-1">
+                        <h3 class="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+                            Gráfico de líneas
+                        </h3>
+                        <p class="text-gray-400 text-sm mb-4">Ideal para mostrar cambios continuos en el tiempo</p>
+                        <div class="chart-container">
+                            <canvas id="lineChart"></canvas>
+                        </div>
+                        <div class="flex justify-center gap-4 mt-2 text-xs">
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-orange-400"></span> Temperatura</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-400"></span> Humedad</span>
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-2">
+                        <h3 class="text-xl font-bold mb-4 text-green-400 flex items-center gap-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                            Gráfico de barras
+                        </h3>
+                        <p class="text-gray-400 text-sm mb-4">Perfecto para comparar cantidades en diferentes momentos</p>
+                        <div class="chart-container">
+                            <canvas id="barChart"></canvas>
+                        </div>
+                        <div class="flex justify-center gap-4 mt-2 text-xs">
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 bg-blue-500"></span> Lluvia diaria (mm)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-3 grid grid-cols-3 gap-4 text-center">
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 font-bold mb-1">Detectar patrones</div>
+                        <div class="text-xs text-gray-400">Sequías, lluvia intensa, olas de calor visibles al instante</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 font-bold mb-1">Contar una historia</div>
+                        <div class="text-xs text-gray-400">Sobre el clima local de forma intuitiva</div>
+                    </div>
+                    <div class="data-card p-4 rounded-lg">
+                        <div class="text-yellow-400 font-bold mb-1">Facilitar comunicación</div>
+                        <div class="text-xs text-gray-400">Entre estudiantes, agricultores y comunidad</div>
+                    </div>
+                </div>
+                
+                <p class="text-center mt-6 text-lg text-gray-300 italic reveal-text stagger-4">"Un buen gráfico vale más que mil números"</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 13: Patrones -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1e2b1f 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">Buscando <span class="text-yellow-400">patrones</span></h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">¿Qué patrones podemos encontrar?</p>
+                
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-1 border-l-4 border-yellow-600">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🏜️</span>
+                            <h3 class="text-xl font-bold text-yellow-600">Periodos secos</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Muchos días seguidos con 0 mm de lluvia, indicando inicio de sequía.</p>
+                        <div class="inline-block px-3 py-1 rounded-full bg-yellow-600/10 text-yellow-600 text-xs border border-yellow-600/20">
+                            Indicador: 5+ días consecutivos sin precipitación
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-2 border-l-4 border-blue-500">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🌧️</span>
+                            <h3 class="text-xl font-bold text-blue-400">Lluvias concentradas</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Pocos días con mucha lluvia, mostrando picos altos en el gráfico.</p>
+                        <div class="inline-block px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs border border-blue-500/20">
+                            Indicador: Eventos >20mm en pocos días
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-3 border-l-4 border-red-500">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🔥</span>
+                            <h3 class="text-xl font-bold text-red-500">Olas de calor</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Varios días seguidos con temperatura muy alta, superando umbrales.</p>
+                        <div class="inline-block px-3 py-1 rounded-full bg-red-500/10 text-red-500 text-xs border border-red-500/20">
+                            Indicador: 3+ días consecutivos >30°C
+                        </div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-4 border-l-4 border-cyan-400">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">❄️</span>
+                            <h3 class="text-xl font-bold text-cyan-400">Heladas/Noches frías</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Temperaturas mínimas muy bajas en ciertas fechas, riesgo para cultivos.</p>
+                        <div class="inline-block px-3 py-1 rounded-full bg-cyan-400/10 text-cyan-400 text-xs border border-cyan-400/20">
+                            Indicador: Temperatura mínima <5°C
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 reveal-text stagger-5">
+                    <h3 class="text-center text-lg font-bold mb-4 text-gray-300">Cómo identificar patrones en gráficos</h3>
+                    <div class="flex justify-center gap-8">
+                        <div class="text-center">
+                            <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-2 text-xl font-bold">1</div>
+                            <div class="text-sm text-gray-400">Observar forma general</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-2 text-xl font-bold">2</div>
+                            <div class="text-sm text-gray-400">Buscar repeticiones</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-2 text-xl font-bold">3</div>
+                            <div class="text-sm text-gray-400">Identificar extremos</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-2 text-xl font-bold">4</div>
+                            <div class="text-sm text-gray-400">Comparar periodos</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 14: Tendencias -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #1a2f1a 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-5xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-8 reveal-text text-center">¿Está cambiando algo con el <span class="text-yellow-400">tiempo?</span></h2>
+                
+                <div class="reveal-text stagger-1 data-card p-8 rounded-2xl mb-8">
+                    <h3 class="text-xl font-bold mb-6 text-blue-400">Comparar mes a mes o año a año</h3>
+                    <p class="text-gray-300 mb-6">Analizar series de datos a lo largo del tiempo para identificar cambios sistemáticos.</p>
+                    
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                            <div class="text-orange-400 font-bold mb-2">¿Suben las temperaturas promedio?</div>
+                            <p class="text-sm text-gray-400">Comparar promedios anuales o de décadas</p>
+                        </div>
+                        <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                            <div class="text-blue-400 font-bold mb-2">¿Se concentran más las lluvias?</div>
+                            <p class="text-sm text-gray-400">Menos días de lluvia pero mayor intensidad</p>
+                        </div>
+                        <div class="p-4 rounded-lg bg-white/5 border border-white/10">
+                            <div class="text-green-400 font-bold mb-2">¿Cambian las temporadas?</div>
+                            <p class="text-sm text-gray-400">Épocas lluviosas o secas más cortas o largas</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-2 data-card p-6 rounded-xl border-2 border-yellow-400/30 bg-yellow-500/5 mb-8">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-yellow-400 mb-1">Mensaje clave</h4>
+                            <p class="text-gray-300">Una tendencia se ve observando <strong>muchos datos en el tiempo</strong>, no solo un día aislado.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-3 flex justify-center gap-4">
+                    <div class="text-center px-6 py-4 rounded-lg bg-white/5 border border-white/10">
+                        <div class="text-3xl font-bold text-gray-400 mb-1">D</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Diaria</div>
+                        <div class="text-xs text-orange-600 mt-1">Variabilidad</div>
+                    </div>
+                    <div class="text-center px-6 py-4 rounded-lg bg-white/5 border border-white/10">
+                        <div class="text-3xl font-bold text-blue-400 mb-1">S</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Semanal</div>
+                        <div class="text-xs text-orange-600 mt-1">Patrones</div>
+                    </div>
+                    <div class="text-center px-6 py-4 rounded-lg bg-white/5 border border-white/10">
+                        <div class="text-3xl font-bold text-yellow-400 mb-1">M</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Mensual</div>
+                        <div class="text-xs text-orange-600 mt-1">Tendencias</div>
+                    </div>
+                    <div class="text-center px-6 py-4 rounded-lg bg-white/5 border border-white/10">
+                        <div class="text-3xl font-bold text-red-400 mb-1">A</div>
+                        <div class="text-xs text-gray-500 uppercase tracking-wider">Anual</div>
+                        <div class="text-xs text-orange-600 mt-1">Cambios climáticos</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 15: Calendario -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full grid md:grid-cols-2 gap-12 items-center">
+                <div class="reveal-text">
+                    <h2 class="text-4xl md:text-5xl text-yellow-400 mb-6">Calendario agrícola <span class="text-yellow-400">+ datos</span></h2>
+                    <p class="text-xl text-gray-400 mb-8">Sembrar con tradición y evidencia</p>
+                    
+                    <div class="space-y-6">
+                        <div class="data-card p-6 rounded-xl border-l-4 border-amber-600">
+                            <h3 class="font-bold text-lg mb-3 text-amber-600 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Calendario tradicional
+                            </h3>
+                            <p class="text-gray-400 text-sm mb-3">Se basa en el saber ancestral y experiencia local acumulada:</p>
+                            <ul class="text-sm text-gray-300 space-y-1">
+                                <li>• Épocas de siembra según experiencia transmitida</li>
+                                <li>• Uso de indicadores naturales (luna, animales, flora)</li>
+                                <li>• Historia de lo que ha funcionado por generaciones</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="data-card p-6 rounded-xl border-l-4 border-blue-500">
+                            <h3 class="font-bold text-lg mb-3 text-blue-400 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                                Los datos ayudan a:
+                            </h3>
+                            <ul class="text-sm text-gray-300 space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-blue-400 mt-1">→</span>
+                                    <span>Ver cambios en el inicio de lluvias</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="text-blue-400 mt-1">→</span>
+                                    <span>Detectar eventos extremos más frecuentes</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="text-blue-400 mt-1">→</span>
+                                    <span>Ajustar el calendario cuando el clima cambia</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-2">
+                    <div class="data-card p-8 rounded-2xl bg-gradient-to-br from-yellow-500/10 to-transparent border border-yellow-400/30">
+                        <div class="text-6xl mb-4">💬</div>
+                        <blockquote class="text-2xl font-serif italic text-gray-200 leading-relaxed mb-4">
+                            "El calendario me dice cuándo tradicionalmente sembrar; los datos me dicen si este año se puede seguir igual o hay que ajustar."
+                        </blockquote>
+                        <div class="w-16 h-1 bg-yellow-400 rounded"></div>
+                    </div>
+                    
+                    <div class="mt-6 grid grid-cols-2 gap-4">
+                        <div class="data-card p-4 rounded-lg text-center">
+                            <div class="text-3xl mb-2">📜</div>
+                            <div class="text-sm font-semibold text-amber-600">Tradición</div>
+                            <div class="text-xs text-green-500">Conocimiento ancestral</div>
+                        </div>
+                        <div class="data-card p-4 rounded-lg text-center">
+                            <div class="text-3xl mb-2">📊</div>
+                            <div class="text-sm font-semibold text-blue-400">Datos</div>
+                            <div class="text-xs text-orange-500">Evidencia actual</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 16: Fases de la luna -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1e2b1f 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">La Luna en el calendario <span class="text-yellow-400">agrícola</span></h2>
+                
+                <div class="grid md:grid-cols-3 gap-8 mb-12">
+                    <div class="reveal-text stagger-1 text-center">
+                        <div class="moon-phase mx-auto mb-6"></div>
+                        <h3 class="text-xl font-bold mb-3 text-gray-200">Influencia lunar</h3>
+                        <p class="text-gray-400 text-sm">En muchos contextos se enseña que la luna influye en diversos aspectos del cultivo.</p>
+                    </div>
+                    
+                    <div class="reveal-text stagger-2 data-card p-6 rounded-xl">
+                        <h3 class="text-lg font-bold mb-4 text-yellow-400">Aspectos influenciados:</h3>
+                        <ul class="space-y-3 text-gray-300 text-sm">
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                Germinación y vigor de plantas
+                            </li>
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                Desarrollo de raíces o parte aérea
+                            </li>
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                Momentos ideales para poda o trasplante
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="reveal-text stagger-3 data-card p-6 rounded-xl">
+                        <h3 class="text-lg font-bold mb-4 text-blue-400">Ciclos regulares:</h3>
+                        <ul class="space-y-3 text-gray-300 text-sm">
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                Planificar siembras
+                            </li>
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                Diseñar actividades de observación
+                            </li>
+                            <li class="flex items-center gap-3">
+                                <span class="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                Registrar en la escuela
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-4 data-card p-8 rounded-2xl border-2 border-purple-400/30 bg-purple-500/5">
+                    <h3 class="text-xl font-bold mb-6 text-purple-400 text-center">Oportunidad educativa</h3>
+                    <p class="text-center text-gray-300 mb-6">Comparar resultados entre diferentes enfoques para aprender mediante la evidencia:</p>
+                    
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="p-4 rounded-lg bg-white/5 border border-white/10 text-center">
+                            <div class="text-3xl mb-2">🌙</div>
+                            <h4 class="font-bold text-amber-400 mb-2">A. Siembra según calendario lunar</h4>
+                            <p class="text-xs text-gray-400">Según fases tradicionales recomendadas</p>
+                        </div>
+                        <div class="p-4 rounded-lg bg-white/5 border border-white/10 text-center">
+                            <div class="text-3xl mb-2">📊</div>
+                            <h4 class="font-bold text-blue-400 mb-2">B. Siembra ajustada por datos</h4>
+                            <p class="text-xs text-gray-400">Basada en humedad del suelo y pronóstico</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 text-center">
+                        <span class="inline-block px-4 py-2 rounded-full bg-purple-500/20 text-purple-300 text-sm border border-purple-500/30">
+                            Comparar: germinación, crecimiento, rendimiento
+                        </span>
+                    </div>
+                </div>
+                
+                <p class="text-center mt-8 text-lg text-gray-300 reveal-text stagger-5">
+                    <span class="text-amber-400 font-bold">Ciencia</span> + <span class="text-yellow-400 font-bold">Tradición</span> = <span class="text-green-400 font-bold">Mejor decisión</span>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 17: Diversidad de cultivos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-4 reveal-text text-center">No todos los cultivos se tratan <span class="text-yellow-400">igual</span></h2>
+                <p class="text-center text-gray-400 mb-12 reveal-text stagger-1">¿Qué quieres sembrar? El calendario no es uno solo</p>
+                
+                <div class="grid md:grid-cols-3 gap-6 mb-8">
+                    <div class="reveal-text stagger-2 data-card p-6 rounded-xl">
+                        <h3 class="text-lg font-bold mb-4 text-green-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>
+                            Tipo de cultivo
+                        </h3>
+                        <ul class="space-y-2 text-sm text-gray-300">
+                            <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> Hortalizas de hoja</li>
+                            <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> Cultivos de fruto</li>
+                            <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> Raíces y tubérculos</li>
+                            <li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span> Frutales y perennes</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="reveal-text stagger-3 data-card p-6 rounded-xl">
+                        <h3 class="text-lg font-bold mb-4 text-blue-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Ciclo del cultivo
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-2 rounded bg-white/5">
+                                <span class="text-sm text-gray-300">Corto</span>
+                                <span class="text-xs text-orange-500">30-60 días</span>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded bg-white/5">
+                                <span class="text-sm text-gray-300">Mediano</span>
+                                <span class="text-xs text-orange-500">60-120 días</span>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded bg-white/5">
+                                <span class="text-sm text-gray-300">Largo</span>
+                                <span class="text-xs text-orange-500">120+ días</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-4 data-card p-6 rounded-xl">
+                        <h3 class="text-lg font-bold mb-4 text-yellow-400 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            Objetivo
+                        </h3>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-3 py-1 rounded-full bg-white/5 text-xs text-gray-300">Autoconsumo</span>
+                            <span class="px-3 py-1 rounded-full bg-white/5 text-xs text-gray-300">Venta</span>
+                            <span class="px-3 py-1 rounded-full bg-white/5 text-xs text-gray-300">Semilla</span>
+                            <span class="px-3 py-1 rounded-full bg-white/5 text-xs text-gray-300">Forraje</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-5 data-card p-6 rounded-xl border-l-4 border-yellow-400 bg-yellow-500/5">
+                    <h3 class="font-bold text-lg mb-3 text-yellow-400">Ajustes del calendario</h3>
+                    <div class="grid md:grid-cols-2 gap-4 text-sm text-gray-300">
+                        <div>
+                            <strong class="text-white">Cultivos de ciclo corto:</strong> Más flexibles, pueden ajustarse más frecuentemente
+                        </div>
+                        <div>
+                            <strong class="text-white">Cultivos de ciclo largo:</strong> Requieren planificación más cuidadosa
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-white/10 text-center">
+                        <p class="text-yellow-400 font-semibold">No existe "un" calendario perfecto; se construye entre datos, experiencia y tipo de cultivo.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 18: Caso práctico 1 -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1a2f1a 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-5xl w-full">
+                <div class="text-center mb-12">
+                    <span class="inline-block px-4 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-sm mb-4 reveal-text">Caso práctico 1</span>
+                    <h2 class="text-4xl md:text-5xl text-yellow-400 reveal-text stagger-1">¿Cuándo <span class="text-yellow-400">sembrar?</span></h2>
+                    <p class="text-gray-400 mt-4 reveal-text stagger-2">Decidir la fecha de siembra</p>
+                </div>
+                
+                <div class="grid md:grid-cols-2 gap-8 mb-8">
+                    <div class="reveal-text stagger-3 space-y-4">
+                        <div class="data-card p-6 rounded-xl">
+                            <h3 class="font-bold text-lg mb-4 text-blue-400 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                                Analizar
+                            </h3>
+                            <ul class="space-y-2 text-sm text-gray-300">
+                                <li>• ¿En qué semana empiezan las lluvias más constantes?</li>
+                                <li>• ¿Hay riesgo de "falsa siembra"?</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="data-card p-6 rounded-xl">
+                            <h3 class="font-bold text-lg mb-4 text-green-400 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                                Cruzar información
+                            </h3>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2 text-sm text-gray-300">
+                                    <span class="w-2 h-2 bg-amber-400 rounded-full"></span>
+                                    Calendario agrícola tradicional
+                                </div>
+                                <div class="flex items-center gap-2 text-sm text-gray-300">
+                                    <span class="w-2 h-2 bg-yellow-200 rounded-full"></span>
+                                    Fases de la luna
+                                </div>
+                                <div class="flex items-center gap-2 text-sm text-gray-300">
+                                    <span class="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                    Datos de lluvia recientes
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-4">
+                        <div class="data-card p-6 rounded-xl h-full border-2 border-yellow-400/30">
+                            <h3 class="font-bold text-lg mb-6 text-yellow-400 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Preguntas guía
+                            </h3>
+                            
+                            <div class="space-y-6">
+                                <div class="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                                    <p class="text-red-400 font-semibold mb-2">¿Qué pasaría si sembramos demasiado temprano?</p>
+                                    <p class="text-sm text-gray-400">Riesgo de sequía, baja germinación, pérdida de semilla</p>
+                                </div>
+                                
+                                <div class="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                                    <p class="text-orange-400 font-semibold mb-2">¿Y si esperamos demasiado?</p>
+                                    <p class="text-sm text-gray-400">Ciclo corto, menor rendimiento, riesgo de heladas tardías</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 19: Caso práctico 2 -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #1e2b1f 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-5xl w-full">
+                <div class="text-center mb-12">
+                    <span class="inline-block px-4 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm mb-4 reveal-text">Caso práctico 2</span>
+                    <h2 class="text-4xl md:text-5xl text-blue-400 reveal-text stagger-1">¿Cuánto <span class="text-blue-400">regar?</span></h2>
+                    <p class="text-gray-400 mt-4 reveal-text stagger-2">Decidir cuánto regar</p>
+                </div>
+                
+                <div class="reveal-text stagger-3 data-card p-8 rounded-2xl mb-8">
+                    <h3 class="text-xl font-bold mb-6 text-center text-gray-300">Combinar datos de:</h3>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div class="flex items-center gap-4 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                            <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-2xl">🌧️</div>
+                            <div>
+                                <h4 class="font-bold text-blue-400">Lluvia reciente</h4>
+                                <p class="text-sm text-gray-400">Últimos 3-7 días de precipitación</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                            <div class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center text-2xl">💧</div>
+                            <div>
+                                <h4 class="font-bold text-green-400">Humedad del suelo</h4>
+                                <p class="text-sm text-gray-400">Medida con sensores o estimada</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                    <div class="reveal-text stagger-4 data-card p-6 rounded-xl">
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold flex-shrink-0">?</div>
+                            <div>
+                                <p class="text-gray-300 mb-2">Si no ha llovido en varios días y la humedad bajó...</p>
+                                <p class="text-sm text-gray-400 mb-3">¿Es momento de regar?</p>
+                                <div class="inline-block px-3 py-1 rounded bg-orange-500/20 text-orange-400 text-xs">
+                                    Acción: Evaluar necesidad según cultivo y etapa
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-5 data-card p-6 rounded-xl">
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold flex-shrink-0">?</div>
+                            <div>
+                                <p class="text-gray-300 mb-2">Si ayer llovió mucho y la humedad está alta...</p>
+                                <p class="text-sm text-gray-400 mb-3">¿Podemos ahorrar agua hoy?</p>
+                                <div class="inline-block px-3 py-1 rounded bg-blue-500/20 text-blue-400 text-xs">
+                                    Acción: Postergar o reducir riego
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-5 text-center">
+                    <div class="inline-block data-card px-8 py-4 rounded-full border-2 border-blue-400/30">
+                        <p class="text-blue-400 font-bold text-lg">Riego inteligente = Ahorro de agua + Mejores cultivos</p>
+                    </div>
+                    <p class="text-green-400 mt-4 text-sm">Planificar el riego usando experiencia + datos, no solo rutina fija</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 20: Riesgos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-red-400 mb-12 reveal-text text-center">Identificando <span class="text-red-400">riesgos climáticos</span></h2>
+                
+                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-1 border-l-4 border-yellow-600">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🏜️</span>
+                            <h3 class="text-xl font-bold text-yellow-600">Sequías cortas pero frecuentes</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm">Estrés hídrico que afecta el crecimiento y desarrollo de las plantas.</p>
+                        <div class="mt-3 text-xs text-orange-600 bg-yellow-600/10 inline-block px-2 py-1 rounded">En gráfico: 5-15 días sin lluvia</div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-2 border-l-4 border-blue-600">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🌊</span>
+                            <h3 class="text-xl font-bold text-blue-600">Lluvias intensas</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm">Causan erosión, encharcamiento y enfermedades en cultivos.</p>
+                        <div class="mt-3 text-xs text-orange-600 bg-blue-600/10 inline-block px-2 py-1 rounded">En gráfico: Picos >30mm en un día</div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-3 border-l-4 border-red-500">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">🔥</span>
+                            <h3 class="text-xl font-bold text-red-500">Olas de calor</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm">Afectan floración, frutos y animales, reduciendo rendimientos.</p>
+                        <div class="mt-3 text-xs text-orange-500 bg-red-500/10 inline-block px-2 py-1 rounded">En gráfico: 3+ días >30°C</div>
+                    </div>
+                    
+                    <div class="data-card p-6 rounded-xl reveal-text stagger-4 border-l-4 border-cyan-400">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-3xl">❄️</span>
+                            <h3 class="text-xl font-bold text-cyan-400">Heladas</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm">Causan daño en hojas, flores y frutos, especialmente en cultivos sensibles.</p>
+                        <div class="mt-3 text-xs text-orange-400 bg-cyan-400/10 inline-block px-2 py-1 rounded">En gráfico: Temp. mínima <5°C</div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-5 data-card p-6 rounded-xl bg-purple-500/5 border border-purple-500/20">
+                    <h3 class="font-bold text-lg mb-3 text-purple-400 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                        Actividad sugerida
+                    </h3>
+                    <p class="text-gray-300">Observar un gráfico simple y preguntar: <strong class="text-white">"¿Qué riesgos ven para el cultivo X en este periodo?"</strong></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 21: Recomendaciones -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1e2b1f 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">De la matemática a la <span class="text-yellow-400">recomendación</span></h2>
+                
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="reveal-text stagger-2 data-card p-6 rounded-xl">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center text-2xl">📅</div>
+                            <h3 class="text-xl font-bold text-green-400">Ajustar fechas de siembra</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Basándose en el inicio real de las lluvias y riesgo de sequía.</p>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 bg-white/5 rounded text-green-500">Promedio inicio lluvias</span>
+                            <span class="px-2 py-1 bg-white/5 rounded text-green-500">Días secos iniciales</span>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-3 data-card p-6 rounded-xl">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-2xl">💧</div>
+                            <h3 class="text-xl font-bold text-blue-400">Organizar calendario de riego</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Según frecuencia de días secos y capacidad de retención del suelo.</p>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 bg-white/5 rounded text-orange-500">Días sin lluvia</span>
+                            <span class="px-2 py-1 bg-white/5 rounded text-orange-500">Humedad del suelo</span>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-4 data-card p-6 rounded-xl">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center text-2xl">🌱</div>
+                            <h3 class="text-xl font-bold text-orange-400">Seleccionar cultivos adecuados</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Elegir variedades más apropiadas para zonas específicas.</p>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 bg-white/5 rounded text-blue-500">Temp. promedio</span>
+                            <span class="px-2 py-1 bg-white/5 rounded text-blue-500">Lluvia anual</span>
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-5 data-card p-6 rounded-xl">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-2xl">🚨</div>
+                            <h3 class="text-xl font-bold text-purple-400">Diseñar alertas</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-3">Sistema de alertas tempranas para la comunidad.</p>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 bg-red-500/20 rounded text-red-400">"Semana seca"</span>
+                            <span class="px-2 py-1 bg-blue-500/20 rounded text-blue-400">"Lluvia intensa"</span>
+                            <span class="px-2 py-1 bg-cyan-500/20 rounded text-cyan-400">"Riesgo de helada"</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-8 text-center reveal-text stagger-5">
+                    <p class="text-xl text-gray-300 italic">"El poder de los datos: Transformar números y gráficos en decisiones concretas"</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 22: Proyectos -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #2C3E2D 0%, #3d4f42 100%);">
+        <div class="min-h-screen flex items-center justify-center px-8 py-16">
+            <div class="max-w-6xl w-full">
+                <h2 class="text-4xl md:text-5xl text-yellow-400 mb-12 reveal-text text-center">Proyectos para el <span class="text-yellow-400">aula y la finca</span></h2>
+                
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="reveal-text stagger-1 data-card p-8 rounded-2xl hover:scale-105 transition-transform duration-300">
+                        <div class="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-6 text-3xl">🌱</div>
+                        <h3 class="text-xl font-bold mb-3 text-green-400">"Mi huerto y el clima local"</h3>
+                        <p class="text-gray-400 text-sm mb-4">Registrar diariamente variables climáticas, del suelo y estado de las plantas.</p>
+                        <ul class="text-xs text-yellow-500 space-y-1 mb-4">
+                            <li>• Bitácora diaria</li>
+                            <li>• Registro de temperatura y lluvia</li>
+                            <li>• Fotografías del desarrollo</li>
+                        </ul>
+                        <div class="inline-block px-3 py-1 rounded-full bg-green-500/10 text-green-400 text-xs border border-green-500/20">
+                            Todo el año escolar
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-2 data-card p-8 rounded-2xl hover:scale-105 transition-transform duration-300">
+                        <div class="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center mb-6 text-3xl">🌙</div>
+                        <h3 class="text-xl font-bold mb-3 text-yellow-400">"Calendario agroclimático-lunar"</h3>
+                        <p class="text-gray-400 text-sm mb-4">Combinar datos de lluvia y temperatura con fases de la luna.</p>
+                        <ul class="text-xs text-green-500 space-y-1 mb-4">
+                            <li>• Gráficos de datos históricos</li>
+                            <li>• Calendario lunar anual</li>
+                            <li>• Recomendaciones por cultivo</li>
+                        </ul>
+                        <div class="inline-block px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-400 text-xs border border-yellow-500/20">
+                            Proyecto semestral
+                        </div>
+                    </div>
+                    
+                    <div class="reveal-text stagger-3 data-card p-8 rounded-2xl hover:scale-105 transition-transform duration-300">
+                        <div class="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-6 text-3xl">💧</div>
+                        <h3 class="text-xl font-bold mb-3 text-blue-400">"Monitoreando el estrés hídrico"</h3>
+                        <p class="text-gray-400 text-sm mb-4">Relacionar días sin lluvia con síntomas visibles en cultivos.</p>
+                        <ul class="text-xs text-orange-500 space-y-1 mb-4">
+                            <li>• Conteo de días secos</li>
+                            <li>• Observación de síntomas</li>
+                            <li>• Correlación datos-síntomas</li>
+                        </ul>
+                        <div class="inline-block px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs border border-blue-500/20">
+                            Proyecto de 2-3 meses
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-12 reveal-text stagger-4">
+                    <h3 class="text-center text-lg font-bold mb-4 text-gray-300">Integración curricular</h3>
+                    <div class="flex justify-center gap-4 flex-wrap">
+                        <span class="px-4 py-2 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Matemáticas</span>
+                        <span class="px-4 py-2 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">Física</span>
+                        <span class="px-4 py-2 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Ciencias</span>
+                        <span class="px-4 py-2 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">Social</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 23: Cierre -->
+    <section class="slide leaf-pattern" style="background: linear-gradient(135deg, #1a2f1a 0%, #2C3E2D 100%);">
+        <div class="min-h-screen flex flex-col justify-center items-center px-8 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-full overflow-hidden opacity-20">
+                <div class="absolute top-20 left-20 w-72 h-72 bg-yellow-500 rounded-full blur-3xl floating-element"></div>
+                <div class="absolute bottom-20 right-20 w-96 h-96 bg-green-500 rounded-full blur-3xl floating-element" style="animation-delay: 3s;"></div>
+            </div>
+            
+            <div class="z-10 max-w-4xl text-center">
+                <h2 class="text-5xl md:text-6xl text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-300 mb-8 reveal-text">
+                    Cuando el clima habla…<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-300">¿lo escuchamos?</span>
+                </h2>
+                
+                <div class="space-y-6 mb-12 reveal-text stagger-1">
+                    <div class="data-card p-6 rounded-xl inline-block max-w-2xl">
+                        <p class="text-lg text-gray-300">Los datos agroclimáticos son una <strong class="text-yellow-400">herramienta clave</strong> para:</p>
+                        <div class="grid md:grid-cols-2 gap-4 mt-4 text-left">
+                            <div class="flex items-start gap-3">
+                                <span class="w-2 h-2 bg-blue-400 rounded-full mt-2"></span>
+                                <span class="text-gray-400 text-sm">Enseñar Matemáticas y Física de forma contextualizada</span>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <span class="w-2 h-2 bg-green-400 rounded-full mt-2"></span>
+                                <span class="text-gray-400 text-sm">Fortalecer la educación ambiental y sostenibilidad</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-2 mb-12">
+                    <h3 class="text-xl font-bold mb-4 text-gray-300">Invitación a:</h3>
+                    <div class="flex flex-col md:flex-row gap-4 justify-center">
+                        <div class="data-card px-6 py-4 rounded-lg flex items-center gap-3">
+                            <span class="text-2xl">📊</span>
+                            <span class="text-gray-300">Seguir integrando datos reales en el aula</span>
+                        </div>
+                        <div class="data-card px-6 py-4 rounded-lg flex items-center gap-3">
+                            <span class="text-2xl">🤝</span>
+                            <span class="text-gray-300">Construir calendarios agrícolas vivos con la comunidad</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reveal-text stagger-3">
+                    <div class="inline-block data-card px-8 py-6 rounded-2xl border-2 border-yellow-400/30 bg-yellow-500/5">
+                        <p class="text-2xl font-serif italic text-orange-400">"Cada número es una pista del clima.<br>Lo importante es aprender a leerlo."</p>
+                    </div>
+                </div>
+                
+                <div class="mt-12 reveal-text stagger-4">
+                    <button onclick="goToSlide(0)" class="px-8 py-3 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/50 hover:bg-yellow-500/30 transition-colors flex items-center gap-2 mx-auto">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Volver al inicio
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // Definición de los slides para el menú
+        const slideData = [
+            { title: "Portada - Cuando el clima habla" },
+            { title: "Propósito del taller" },
+            { title: "Metas de aprendizaje" },
+            { title: "Estructura de la sesión" },
+            { title: "¿Qué es un dato agroclimático?" },
+            { title: "Clima + suelo = base de la producción" },
+            { title: "Variables agroclimáticas clave" },
+            { title: "Fuentes de datos agroclimáticos" },
+            { title: "Unidades: el idioma de los datos" },
+            { title: "Ejemplo de tabla de datos" },
+            { title: "Operaciones básicas con los datos" },
+            { title: "Ver el clima en un gráfico" },
+            { title: "Buscando patrones" },
+            { title: "¿Está cambiando algo con el tiempo?" },
+            { title: "Calendario agrícola + datos" },
+            { title: "La luna en el calendario agrícola" },
+            { title: "No todos los cultivos se tratan igual" },
+            { title: "¿Cuándo sembrar?" },
+            { title: "¿Cuánto regar?" },
+            { title: "Identificando riesgos climáticos" },
+            { title: "De la matemática a la recomendación" },
+            { title: "Proyectos para el aula y la finca" },
+            { title: "Cierre - ¿Lo escuchamos?" }
+        ];
+
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        
+        // Generar items del menú
+        const menuItemsContainer = document.getElementById('menuItems');
+        slideData.forEach((slide, index) => {
+            const item = document.createElement('div');
+            item.className = 'menu-item' + (index === 0 ? ' active' : '');
+            item.onclick = () => {
+                goToSlide(index);
+                toggleMenu(); // Cerrar menú al seleccionar
+            };
+            item.innerHTML = `
+                <span class="menu-number">${String(index + 1).padStart(2, '0')}</span>
+                <span class="menu-title">${slide.title}</span>
+            `;
+            menuItemsContainer.appendChild(item);
+        });
+        
+        const menuItems = document.querySelectorAll('.menu-item');
+        const progressBar = document.getElementById('progressBar');
+        const sideMenu = document.getElementById('sideMenu');
+        const menuToggle = document.getElementById('menuToggle');
+        const menuOverlay = document.getElementById('menuOverlay');
+        const menuIcon = document.getElementById('menuIcon');
+        
+        function toggleMenu() {
+            sideMenu.classList.toggle('open');
+            menuToggle.classList.toggle('active');
+            menuOverlay.classList.toggle('active');
+            
+            // Cambiar icono
+            if (sideMenu.classList.contains('open')) {
+                menuIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+            } else {
+                menuIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>';
+            }
+        }
+        
+        function updateSlides() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active', 'prev');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                } else if (index < currentSlide) {
+                    slide.classList.add('prev');
+                }
+            });
+            
+            // Actualizar items del menú
+            menuItems.forEach((item, index) => {
+                item.classList.toggle('active', index === currentSlide);
+            });
+            
+            progressBar.style.width = ((currentSlide + 1) / totalSlides * 100) + '%';
+            
+            // Initialize charts if on slide 12 (index 11)
+            if (currentSlide === 11) {
+                setTimeout(initCharts, 500);
+            }
+        }
+        
+        function goToSlide(n) {
+            if (n >= 0 && n < totalSlides) {
+                currentSlide = n;
+                updateSlides();
+            }
+        }
+        
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                updateSlides();
+            }
+        }
+        
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlides();
+            }
+        }
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                prevSlide();
+            } else if (e.key === 'Home') {
+                goToSlide(0);
+            } else if (e.key === 'End') {
+                goToSlide(totalSlides - 1);
+            } else if (e.key === 'Escape') {
+                // Cerrar menú si está abierto
+                if (sideMenu.classList.contains('open')) {
+                    toggleMenu();
+                }
+            }
+        });
+        
+        // Touch/swipe support
+        let touchStartX = 0;
+        let touchEndX = 0;
+        
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+        
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+        
+        function handleSwipe() {
+            const swipeThreshold = 50;
+            const diff = touchStartX - touchEndX;
+            
+            if (Math.abs(diff) > swipeThreshold) {
+                if (diff > 0) {
+                    nextSlide();
+                } else {
+                    prevSlide();
+                }
+            }
+        }
+        
+        // Chart initialization
+        let chartsInitialized = false;
+        
+        function initCharts() {
+            if (chartsInitialized) return;
+            chartsInitialized = true;
+            
+            // Line chart for temperature and humidity
+            const lineCtx = document.getElementById('lineChart');
+            if (lineCtx) {
+                new Chart(lineCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
+                        datasets: [{
+                            label: 'Temperatura (°C)',
+                            data: [28, 29, 27, 30, 31, 29, 28],
+                            borderColor: '#fb923c',
+                            backgroundColor: 'rgba(251, 146, 60, 0.1)',
+                            tension: 0.4,
+                            borderWidth: 3
+                        }, {
+                            label: 'Humedad (%)',
+                            data: [45, 50, 65, 55, 48, 52, 58],
+                            borderColor: '#60a5fa',
+                            backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                            tension: 0.4,
+                            borderWidth: 3,
+                            yAxisID: 'y1'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                labels: { color: '#9ca3af', font: { size: 11 } }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#6b7280' },
+                                grid: { color: 'rgba(255,255,255,0.05)' }
+                            },
+                            y: {
+                                ticks: { color: '#fb923c' },
+                                grid: { color: 'rgba(255,255,255,0.05)' }
+                            },
+                            y1: {
+                                position: 'right',
+                                ticks: { color: '#60a5fa' },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Bar chart for precipitation
+            const barCtx = document.getElementById('barChart');
+            if (barCtx) {
+                new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
+                        datasets: [{
+                            label: 'Lluvia (mm)',
+                            data: [0, 5, 20, 0, 0, 12, 3],
+                            backgroundColor: [
+                                'rgba(107, 114, 128, 0.5)',
+                                'rgba(96, 165, 250, 0.7)',
+                                'rgba(59, 130, 246, 0.9)',
+                                'rgba(107, 114, 128, 0.5)',
+                                'rgba(107, 114, 128, 0.5)',
+                                'rgba(96, 165, 250, 0.7)',
+                                'rgba(96, 165, 250, 0.6)'
+                            ],
+                            borderColor: [
+                                'rgba(107, 114, 128, 1)',
+                                'rgba(96, 165, 250, 1)',
+                                'rgba(59, 130, 246, 1)',
+                                'rgba(107, 114, 128, 1)',
+                                'rgba(107, 114, 128, 1)',
+                                'rgba(96, 165, 250, 1)',
+                                'rgba(96, 165, 250, 1)'
+                            ],
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#6b7280' },
+                                grid: { display: false }
+                            },
+                            y: {
+                                ticks: { color: '#6b7280' },
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // Initialize
+        updateSlides();
+        
+        // Mouse wheel support with debounce
+        let wheelTimeout;
+        document.addEventListener('wheel', (e) => {
+            if (wheelTimeout) return;
+            
+            wheelTimeout = setTimeout(() => {
+                wheelTimeout = null;
+            }, 800);
+            
+            if (e.deltaY > 0) {
+                nextSlide();
+            } else {
+                prevSlide();
+            }
+        });
+    </script>
+</body>
+</html>
