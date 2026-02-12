@@ -1,2 +1,2 @@
-#III-Congreso-UPR
+III-Congreso-UPR
 Participación de RAPA Project por David Quispitupa
